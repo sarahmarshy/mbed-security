@@ -1,16 +1,15 @@
 #include "CameraOV528.h"
 #include "mbed.h"
-#include "RangeFinder.h"
-#include "mbed.h"
 #include "FATFileSystem.h"
 #include "SDBlockDevice.h"
 #include <stdio.h>
 #include <errno.h>
 
 CameraOV528 camera(D1, D0);
-RangeFinder rf(D5, 10, 5800.0, 100000);
 SDBlockDevice bd(PTE3, PTE1, PTE2, PTE4);
 FATFileSystem fs("fs");
+EventQueue queue;
+int num;
 
 void return_error(int ret_val){
   if (ret_val)
@@ -24,20 +23,6 @@ void errno_error(void* ret_val){
     printf(" Failure. %d \r\n", errno);
   else
     printf(" done.\r\n");
-}
-
-float calibrate_rf(){
-    float closest_dist = rf.read_m();
-    for(int i = 0 ; i < 5; i++){
-        float d = rf.read_m();
-        if (d == -1.0 || d > 5.0)  {
-            continue;
-        } else  {
-            closest_dist = d;
-        }
-        wait_ms(100);
-    }
-    return closest_dist;
 }
 
 int format_fs(){
@@ -63,7 +48,7 @@ void init_fs(){
   }
 }
 
-void take_and_store_photo(int num) {
+void take_and_store_photo() {
     printf("Taking photo\r\n");
     camera.take_picture();
     printf("Took photo\r\n");
@@ -72,7 +57,7 @@ void take_and_store_photo(int num) {
     uint32_t bytes_read = camera.read_picture_data(data_buff, size);
 
     char filename[15];
-    sprintf(filename, "/fs/img%d.jpg", num);
+    sprintf(filename, "/fs/img%d.jpg", num++);
     printf("Opening a new file, %s\r\n", filename);
     FILE* fd = fopen(filename, "wb");
     errno_error(fd);
@@ -83,18 +68,12 @@ void take_and_store_photo(int num) {
 }
 
 int main(){
-    printf("Calibrating...\r\n");
-    float init_dist = calibrate_rf();
     camera.powerup();
-    printf("initial dist: %f\r\n", init_dist);
     init_fs();
-    int i = 0;
+    num = 0;
+    queue.call_every(10000, take_and_store_photo);
+    queue.dispatch();
     while(1) {
-        float d = rf.read_m();
-        if ((init_dist - d) >= 0.01 && d != -1.0 && d <= 5.0) {
-            printf("Object close! %f\r\n", d);
-            take_and_store_photo(i++);
-        }
-        wait_ms(100);
+        wait(0.2);
     }
 }
